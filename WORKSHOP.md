@@ -633,6 +633,26 @@ Open your browser and navigate to:
 4. Wait for processing to complete
 5. Ask questions about the document content
 
+### Learning Mode (Educational Features)
+
+The app includes a **Learning Mode** that visualizes the RAG pipeline in real-time:
+
+1. **Enable "Show RAG Details"** checkbox in the sidebar
+2. Ask a question about your documents
+3. Watch the RAG pipeline execute step-by-step:
+   - **Step 1:** Query converted to 768-dimensional embedding vector
+   - **Step 2:** Similarity search finds top 3 matching chunks
+   - **Step 3:** Retrieved context displayed with page numbers
+   - **Step 4:** LLM generates response using context
+4. View timing for each step to understand performance
+5. Expand "📚 View Source Chunks" to see the exact text used
+
+### Sidebar Features
+
+- **Vector Database Stats:** Shows total chunks and documents
+- **Document Details:** Expandable list of files with chunk counts
+- **Clear All Documents:** Button to reset ChromaDB
+
 ### Example Workflow
 
 ```
@@ -764,6 +784,32 @@ curl http://localhost:8000/api/v2/heartbeat
 # List collections
 curl http://localhost:8000/api/v2/collections
 ```
+
+### Test Scripts for RAG Debugging
+
+Three utility scripts are included to help debug and understand the RAG pipeline:
+
+#### 1. Check Document Statistics
+```bash
+docker exec genai-app python /app/chroma_stats.py
+```
+Shows total chunks, unique documents, and breakdown per file.
+
+#### 2. Test RAG Queries
+```bash
+# Single query
+docker exec genai-app python /app/rag_query.py "your question here"
+
+# Interactive mode
+docker exec -it genai-app python /app/rag_query.py
+```
+Returns similarity scores and retrieved chunks - useful for understanding why certain queries work better than others.
+
+#### 3. Full Test Suite
+```bash
+docker exec genai-app python /app/test_chroma.py
+```
+Runs comprehensive tests including collection stats, sample documents, and test queries.
 
 ---
 
@@ -908,7 +954,9 @@ docker system df
 4. **Init containers** for one-time setup tasks
 5. **RAG architecture** with LangChain
 6. **Vector databases** with ChromaDB
-7. **Local LLM inference** with Ollama
+7. **Local LLM inference** with Ollama (tinyllama:1.1b)
+8. **Embeddings** with nomic-embed-text (768-dimensional vectors)
+9. **RAG debugging** with test scripts (chroma_stats.py, rag_query.py)
 
 ### Key Takeaways
 

@@ -1,6 +1,6 @@
 # 🚀 Lightweight GenAI Stack
 
-A memory-efficient alternative to Docker's GenAI Stack, designed to run **within 8GB RAM**.
+A memory-efficient alternative to Docker's GenAI Stack, designed to run **within 6-8GB RAM**. Features an **educational Learning Mode** that visualizes the RAG pipeline in real-time.
 
 ## 📊 Comparison with Docker GenAI Stack
 
@@ -8,22 +8,23 @@ A memory-efficient alternative to Docker's GenAI Stack, designed to run **within
 |---------|-------------------|------------------------|
 | **Min RAM** | 20GB+ | **6-8GB** |
 | **Vector DB** | Neo4j (heavy) | ChromaDB (light) |
-| **Default Model** | Llama2 7B (~4.5GB) | Phi3:mini (~2.3GB) |
-| **Embeddings** | Sentence Transformers | Nomic-embed-text |
+| **Default Model** | Llama2 7B (~4.5GB) | TinyLlama 1.1B (~600MB) |
+| **Embeddings** | Sentence Transformers | nomic-embed-text (768-dim) |
 | **Framework** | LangChain + Streamlit | LangChain + Streamlit |
-| **Features** | GraphRAG, Knowledge Graph | Simple RAG |
+| **Features** | GraphRAG, Knowledge Graph | Simple RAG + Learning Mode |
 
 ## 🧠 Memory Breakdown
 
 ```
-Component           | RAM Usage
---------------------|----------
-Ollama + phi3:mini  | ~3-4GB
-ChromaDB            | ~256-512MB
-Streamlit App       | ~512MB-1GB
-OS + Docker         | ~1-2GB
---------------------|----------
-Total               | ~5-7GB
+Component              | RAM Usage
+-----------------------|----------
+Ollama + tinyllama:1.1b| ~1-2GB
+nomic-embed-text       | ~300MB
+ChromaDB               | ~256-512MB
+Streamlit App          | ~512MB-1GB
+OS + Docker            | ~1-2GB
+-----------------------|----------
+Total                  | ~4-6GB
 ```
 
 ## 🚀 Quick Start
@@ -58,10 +59,14 @@ lightweight-genai-stack/
 ├── docker-compose.yml      # Main orchestration
 ├── .env.example            # Configuration template
 ├── README.md
+├── WORKSHOP.md             # Detailed workshop guide
+├── chroma_stats.py         # ChromaDB statistics script
+├── rag_query.py            # RAG query testing script
+├── test_chroma.py          # Full ChromaDB test suite
 └── app/
     ├── Dockerfile          # Streamlit app image
     ├── requirements.txt    # Python dependencies
-    └── main.py            # RAG application
+    └── main.py             # RAG application (Learning Mode)
 ```
 
 ## 🔧 Configuration
@@ -70,12 +75,16 @@ lightweight-genai-stack/
 
 Edit `docker-compose.yml` or create `.env`:
 
-| Available RAM | Recommended Model | Command |
-|---------------|-------------------|---------|
-| 6GB | `tinyllama:1.1b` | Fastest, basic capability |
-| 8GB | `phi3:mini` | **Best balance** (default) |
+| Available RAM | Recommended Model | Notes |
+|---------------|-------------------|-------|
+| 6GB | `tinyllama:1.1b` | **Default** - Fastest, ~600MB |
+| 8GB | `phi3:mini` | Better quality, ~2.3GB |
 | 8GB | `llama3.2:3b` | Good general purpose |
 | 8GB | `qwen2.5:3b` | Good for multilingual |
+
+**Current Default Configuration:**
+- **LLM Model:** `tinyllama:1.1b` (~600MB, fast inference)
+- **Embedding Model:** `nomic-embed-text` (768-dimensional vectors)
 
 ### Reduce Memory Further
 
@@ -96,10 +105,20 @@ Direct conversation with the LLM without documents.
 
 ### 2. **RAG Mode** (Document Q&A)
 - Upload PDF, TXT, or Markdown files
-- Documents are chunked and embedded
+- Documents are chunked (500 chars) and embedded (768-dim vectors)
 - Retrieval-augmented generation for accurate answers
 
-### 3. **Persistent Storage**
+### 3. **Learning Mode** (Educational)
+- Real-time RAG pipeline visualization
+- Step-by-step display: Query Embedding → Similarity Search → Context Retrieval → LLM Generation
+- Timing information for each step
+- View retrieved source chunks with page numbers
+
+### 4. **Vector Database Stats**
+- Live chunk and document counts in sidebar
+- Document breakdown showing chunks per file
+
+### 5. **Persistent Storage**
 - ChromaDB stores embeddings persistently
 - Chat history maintained in session
 
@@ -128,6 +147,79 @@ docker compose down -v
 docker stats
 ```
 
+## 🧪 Testing & Debugging Scripts
+
+Three utility scripts are provided for inspecting ChromaDB and testing RAG queries:
+
+### 1. `chroma_stats.py` - View Database Statistics
+
+Shows document and chunk counts in ChromaDB:
+
+```bash
+docker exec genai-app python /app/chroma_stats.py
+```
+
+**Output:**
+```
+============================================================
+CHROMADB STATISTICS
+============================================================
+
+Collection: documents
+----------------------------------------
+  Total chunks: 6,693
+  Unique documents: 3
+
+  Documents breakdown:
+    - report.pdf: 2,231 chunks
+    - manual.pdf: 2,231 chunks
+    - guide.pdf: 2,231 chunks
+============================================================
+```
+
+**When to use:** After uploading documents to verify they were processed correctly.
+
+### 2. `rag_query.py` - Test RAG Searches
+
+Run similarity searches against your documents:
+
+```bash
+# Single query
+docker exec genai-app python /app/rag_query.py "What is the main topic?"
+
+# Interactive mode
+docker exec -it genai-app python /app/rag_query.py
+```
+
+**Output:**
+```
+Connected to ChromaDB | Collection: documents | Chunks: 6,693
+
+============================================================
+QUERY: What is the main topic?
+============================================================
+Found 3 results:
+
+[1] Similarity: 0.510 | Source: report.pdf | Page: 12
+------------------------------------------------------------
+The main topic of this document covers...
+```
+
+**When to use:**
+- Testing if documents are being retrieved correctly
+- Debugging why certain queries aren't finding relevant content
+- Comparing similarity scores for different query phrasings
+
+### 3. `test_chroma.py` - Full Test Suite
+
+Comprehensive ChromaDB inspection with sample queries:
+
+```bash
+docker exec genai-app python /app/test_chroma.py
+```
+
+**When to use:** Initial setup verification or troubleshooting RAG issues.
+
 ## 🔌 API Access
 
 Ollama API is exposed on port 11434:
@@ -135,7 +227,7 @@ Ollama API is exposed on port 11434:
 ```bash
 # Chat with the model directly
 curl http://localhost:11434/api/generate -d '{
-  "model": "phi3:mini",
+  "model": "tinyllama:1.1b",
   "prompt": "Explain Docker in 3 sentences",
   "stream": false
 }'
@@ -150,7 +242,7 @@ curl http://localhost:11434/api/tags
 from langchain_ollama import OllamaLLM
 
 llm = OllamaLLM(
-    model="phi3:mini",
+    model="tinyllama:1.1b",
     base_url="http://localhost:11434"
 )
 

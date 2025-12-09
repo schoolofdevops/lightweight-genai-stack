@@ -91,11 +91,21 @@ def init_embeddings():
 
 def init_vectorstore():
     """Initialize ChromaDB vector store"""
+    import chromadb
+    from chromadb.config import Settings
+
     embeddings = init_embeddings()
+
+    # Create ChromaDB client with proper settings
+    client = chromadb.PersistentClient(
+        path="/app/chroma_db",
+        settings=Settings(anonymized_telemetry=False)
+    )
+
     return Chroma(
+        client=client,
         collection_name="documents",
         embedding_function=embeddings,
-        persist_directory="/app/chroma_db"
     )
 
 

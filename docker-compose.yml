@@ -1,41 +1,11 @@
 services:
-  # Ollama - LLM Server (lightweight model)
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    deploy:
-      resources:
-        limits:
-          memory: 3G  # Limit memory for Ollama (tinyllama is ~600MB)
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    restart: unless-stopped
-
-  # Model Puller - Downloads the lightweight model on startup
-  model-puller:
-    image: curlimages/curl:latest
-    container_name: model-puller
-    depends_on:
-      ollama:
-        condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        echo "Waiting for Ollama to be ready..."
-        sleep 5
-        echo "Pulling tinyllama:1.1b model (ultra-lightweight, ~600MB)..."
-        curl -X POST http://ollama:11434/api/pull -d '{"name": "tinyllama:1.1b"}'
-        echo "Pulling nomic-embed-text for embeddings..."
-        curl -X POST http://ollama:11434/api/pull -d '{"name": "nomic-embed-text"}'
-        echo "Models downloaded successfully!"
+  # Docker Model Runner - LLM Service (requires Docker Desktop 4.40+)
+  # Uses provider.type: model to run LLM directly on host via llama.cpp
+  llm:
+    provider:
+      type: model
+      options:
+        model: ai/llama3.2:1B-Q8_0
 
   # ChromaDB - Lightweight Vector Database
   chromadb:
@@ -63,14 +33,16 @@ services:
     ports:
       - "8501:8501"
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
+      # Docker Model Runner exposes OpenAI-compatible API at this endpoint
+      - OPENAI_API_BASE=http://model-runner.docker.internal/engines/llama.cpp/v1
+      - OPENAI_API_KEY=docker-model-runner
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
-      - LLM_MODEL=tinyllama:1.1b
-      - EMBEDDING_MODEL=nomic-embed-text
+      - LLM_MODEL=ai/llama3.2:1B-Q8_0
+      - EMBEDDING_MODEL=all-MiniLM-L6-v2
     depends_on:
-      ollama:
-        condition: service_healthy
+      llm:
+        condition: service_started
       chromadb:
         condition: service_started
     volumes:
@@ -79,11 +51,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 2G
     restart: unless-stopped
 
 volumes:
-  ollama_data:
   chroma_data:
   uploaded_docs:
 

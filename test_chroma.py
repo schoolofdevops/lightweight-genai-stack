@@ -8,20 +8,20 @@ import chromadb
 from chromadb.config import Settings
 import sys
 import os
-from langchain_ollama import OllamaEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 
 # Configuration
 PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "/app/chroma_db")
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 COLLECTION_NAME = "documents"
 
 
 def get_embedding_function():
     """Get the same embedding function used by the app"""
-    return OllamaEmbeddings(
-        model=EMBEDDING_MODEL,
-        base_url=OLLAMA_BASE_URL,
+    return HuggingFaceEmbeddings(
+        model_name=EMBEDDING_MODEL,
+        model_kwargs={'device': 'cpu'},
+        encode_kwargs={'normalize_embeddings': True}
     )
 
 
@@ -87,7 +87,7 @@ def inspect_collection(client, collection_name):
 
 
 def run_similarity_search(collection, query, n_results=3):
-    """Run a similarity search query using Ollama embeddings"""
+    """Run a similarity search query using HuggingFace embeddings"""
     print(f"\n{'='*50}")
     print(f"QUERY: \"{query}\"")
     print(f"{'='*50}")

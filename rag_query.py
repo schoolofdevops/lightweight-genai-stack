@@ -9,17 +9,20 @@ Usage:
 import chromadb
 import os
 import sys
-from langchain_ollama import OllamaEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 
 PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "/app/chroma_db")
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 COLLECTION_NAME = "documents"
 N_RESULTS = 3
 
 
 def get_embeddings():
-    return OllamaEmbeddings(model=EMBEDDING_MODEL, base_url=OLLAMA_BASE_URL)
+    return HuggingFaceEmbeddings(
+        model_name=EMBEDDING_MODEL,
+        model_kwargs={'device': 'cpu'},
+        encode_kwargs={'normalize_embeddings': True}
+    )
 
 
 def search(collection, query, n_results=N_RESULTS):

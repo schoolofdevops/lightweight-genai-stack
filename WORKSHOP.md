@@ -7,14 +7,16 @@ In this hands-on workshop, you'll learn how to build and deploy a **memory-effic
 ### What You'll Build
 
 A fully functional AI-powered document Q&A system featuring:
-- **Ollama** - Local LLM inference server
+- **Docker Model Runner** - Docker's native LLM inference engine (llama.cpp)
 - **ChromaDB** - Vector database for semantic search
 - **LangChain** - AI orchestration framework
 - **Streamlit** - Interactive web interface
 
 ### Prerequisites
 
-- Docker Desktop installed (with Docker Compose v2)
+- **Docker Desktop 4.40+** with Model Runner enabled (Beta feature)
+- **macOS** (Apple Silicon) or **Linux** with supported GPU
+- Docker Compose v2.35+
 - 6GB+ available RAM
 - Basic familiarity with Docker concepts
 - Terminal/command-line access
@@ -48,11 +50,11 @@ A fully functional AI-powered document Q&A system featuring:
            │                                  │
            ▼                                  ▼
 ┌─────────────────────────┐    ┌─────────────────────────────┐
-│   Ollama LLM Server     │    │      ChromaDB               │
-│      Port: 11434        │    │      Port: 8000             │
+│  Docker Model Runner    │    │      ChromaDB               │
+│  (Host-native llama.cpp)│    │      Port: 8000             │
 │  ┌───────────────────┐  │    │  ┌───────────────────────┐  │
-│  │ tinyllama:1.1b    │  │    │  │ Vector Embeddings     │  │
-│  │ nomic-embed-text  │  │    │  │ Document Chunks       │  │
+│  │ ai/llama3.2:1B    │  │    │  │ Vector Embeddings     │  │
+│  │ OpenAI-compat API │  │    │  │ Document Chunks       │  │
 │  └───────────────────┘  │    │  │ Semantic Search       │  │
 └─────────────────────────┘    └─────────────────────────────┘
 ```
@@ -61,12 +63,21 @@ A fully functional AI-powered document Q&A system featuring:
 
 | Component | Purpose | Memory Usage |
 |-----------|---------|--------------|
-| **Ollama** | Runs LLM locally | ~1-3GB (model dependent) |
+| **Docker Model Runner** | Runs LLM natively on host | ~1-2GB (model dependent) |
 | **ChromaDB** | Stores & searches embeddings | ~256-512MB |
-| **Streamlit App** | Web UI + RAG logic | ~512MB-1GB |
+| **Streamlit App** | Web UI + RAG logic + embeddings | ~1-2GB |
 | **Docker Overhead** | Container runtime | ~500MB |
 
 **Total: ~4-6GB** vs. 20GB+ for full GenAI Stack
+
+### What is Docker Model Runner?
+
+Docker Model Runner is Docker's native LLM inference engine, built on top of llama.cpp. Unlike Ollama which runs as a separate container, Model Runner runs the inference engine directly on your host machine as a native process. Key benefits:
+
+- **Native Performance**: Models run directly on host, not in containers
+- **OpenAI-Compatible API**: Use standard OpenAI client libraries
+- **Integrated with Docker Compose**: Define models using `provider.type: model`
+- **Automatic Model Download**: Models are pulled from Docker Hub on first use
 
 ---
 
@@ -89,43 +100,13 @@ Create `docker-compose.yml`:
 
 ```yaml
 services:
-  # Ollama - LLM Server (lightweight model)
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    deploy:
-      resources:
-        limits:
-          memory: 3G  # Limit memory for Ollama (tinyllama is ~600MB)
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    restart: unless-stopped
-
-  # Model Puller - Downloads the lightweight model on startup
-  model-puller:
-    image: curlimages/curl:latest
-    container_name: model-puller
-    depends_on:
-      ollama:
-        condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        echo "Waiting for Ollama to be ready..."
-        sleep 5
-        echo "Pulling tinyllama:1.1b model (ultra-lightweight, ~600MB)..."
-        curl -X POST http://ollama:11434/api/pull -d '{"name": "tinyllama:1.1b"}'
-        echo "Pulling nomic-embed-text for embeddings..."
-        curl -X POST http://ollama:11434/api/pull -d '{"name": "nomic-embed-text"}'
-        echo "Models downloaded successfully!"
+  # Docker Model Runner - LLM Service (requires Docker Desktop 4.40+)
+  # Uses provider.type: model to run LLM directly on host via llama.cpp
+  llm:
+    provider:
+      type: model
+      options:
+        model: ai/llama3.2:1B-Q8_0
 
   # ChromaDB - Lightweight Vector Database
   chromadb:
@@ -153,14 +134,16 @@ services:
     ports:
       - "8501:8501"
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
+      # Docker Model Runner exposes OpenAI-compatible API at this endpoint
+      - OPENAI_API_BASE=http://model-runner.docker.internal/engines/llama.cpp/v1
+      - OPENAI_API_KEY=docker-model-runner
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
-      - LLM_MODEL=tinyllama:1.1b
-      - EMBEDDING_MODEL=nomic-embed-text
+      - LLM_MODEL=ai/llama3.2:1B-Q8_0
+      - EMBEDDING_MODEL=all-MiniLM-L6-v2
     depends_on:
-      ollama:
-        condition: service_healthy
+      llm:
+        condition: service_started
       chromadb:
         condition: service_started
     volumes:
@@ -169,11 +152,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 2G
     restart: unless-stopped
 
 volumes:
-  ollama_data:
   chroma_data:
   uploaded_docs:
 
@@ -184,36 +166,36 @@ networks:
 
 #### Key Docker Concepts Explained
 
-**1. Service Dependencies with Health Checks**
+**1. Docker Model Runner Service**
+```yaml
+llm:
+  provider:
+    type: model
+    options:
+      model: ai/llama3.2:1B-Q8_0
+```
+This new provider type tells Docker to run the model using Model Runner on the host, not in a container.
+
+**2. Service Dependencies**
 ```yaml
 depends_on:
-  ollama:
-    condition: service_healthy
+  llm:
+    condition: service_started
 ```
-This ensures the app only starts after Ollama is fully ready, not just running.
+The app waits for the model service to be started before initializing.
 
-**2. Resource Limits**
+**3. OpenAI-Compatible API Endpoint**
 ```yaml
-deploy:
-  resources:
-    limits:
-      memory: 3G
+environment:
+  - OPENAI_API_BASE=http://model-runner.docker.internal/engines/llama.cpp/v1
 ```
-Prevents any single container from consuming all available memory.
+Docker Model Runner exposes an OpenAI-compatible API at this special internal DNS name.
 
-**3. Named Volumes for Persistence**
+**4. Named Volumes for Persistence**
 ```yaml
 volumes:
-  ollama_data:    # Persists downloaded models
   chroma_data:    # Persists vector embeddings
 ```
-
-**4. Init Container Pattern (model-puller)**
-```yaml
-model-puller:
-  # Runs once to download models, then exits
-```
-This pattern ensures models are ready before the app needs them.
 
 ---
 

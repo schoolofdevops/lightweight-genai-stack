@@ -2,30 +2,39 @@
 
 A memory-efficient alternative to Docker's GenAI Stack, designed to run **within 6-8GB RAM**. Features an **educational Learning Mode** that visualizes the RAG pipeline in real-time.
 
+**Now powered by Docker Model Runner** - Docker's native LLM inference engine!
+
 ## 📊 Comparison with Docker GenAI Stack
 
 | Feature | Docker GenAI Stack | Lightweight GenAI Stack |
 |---------|-------------------|------------------------|
 | **Min RAM** | 20GB+ | **6-8GB** |
+| **LLM Engine** | Ollama | **Docker Model Runner** |
 | **Vector DB** | Neo4j (heavy) | ChromaDB (light) |
-| **Default Model** | Llama2 7B (~4.5GB) | TinyLlama 1.1B (~600MB) |
-| **Embeddings** | Sentence Transformers | nomic-embed-text (768-dim) |
+| **Default Model** | Llama2 7B (~4.5GB) | Llama 3.2 1B (~1GB) |
+| **Embeddings** | Sentence Transformers | all-MiniLM-L6-v2 (384-dim) |
 | **Framework** | LangChain + Streamlit | LangChain + Streamlit |
 | **Features** | GraphRAG, Knowledge Graph | Simple RAG + Learning Mode |
 
 ## 🧠 Memory Breakdown
 
 ```
-Component              | RAM Usage
------------------------|----------
-Ollama + tinyllama:1.1b| ~1-2GB
-nomic-embed-text       | ~300MB
-ChromaDB               | ~256-512MB
-Streamlit App          | ~512MB-1GB
-OS + Docker            | ~1-2GB
------------------------|----------
-Total                  | ~4-6GB
+Component                    | RAM Usage
+-----------------------------|----------
+Docker Model Runner (Llama3.2)| ~1-2GB
+all-MiniLM-L6-v2 embeddings  | ~100MB
+ChromaDB                     | ~256-512MB
+Streamlit App                | ~512MB-1GB
+OS + Docker                  | ~1-2GB
+-----------------------------|----------
+Total                        | ~4-6GB
 ```
+
+## ⚠️ Requirements
+
+- **Docker Desktop 4.40+** with Model Runner enabled (Beta feature)
+- **macOS** (Apple Silicon) or **Linux** with NVIDIA GPU
+- Docker Compose v2.35+
 
 ## 🚀 Quick Start
 
@@ -73,29 +82,29 @@ lightweight-genai-stack/
 
 ### Choose Your Model (by RAM availability)
 
-Edit `docker-compose.yml` or create `.env`:
+Edit `docker-compose.yml` to change the model:
 
 | Available RAM | Recommended Model | Notes |
 |---------------|-------------------|-------|
-| 6GB | `tinyllama:1.1b` | **Default** - Fastest, ~600MB |
-| 8GB | `phi3:mini` | Better quality, ~2.3GB |
-| 8GB | `llama3.2:3b` | Good general purpose |
-| 8GB | `qwen2.5:3b` | Good for multilingual |
+| 6GB | `ai/llama3.2:1B-Q8_0` | **Default** - Fast, good quality |
+| 8GB | `ai/llama3.2:3B-Q4_K_M` | Better quality |
+| 8GB | `ai/gemma3:4B-Q4_K_M` | Google's Gemma 3 |
+| 12GB+ | `ai/llama3.3:70B-Q4_K_M` | Best quality |
 
 **Current Default Configuration:**
-- **LLM Model:** `tinyllama:1.1b` (~600MB, fast inference)
-- **Embedding Model:** `nomic-embed-text` (768-dimensional vectors)
+- **LLM Model:** `ai/llama3.2:1B-Q8_0` (via Docker Model Runner)
+- **Embedding Model:** `all-MiniLM-L6-v2` (384-dimensional vectors, runs locally)
 
-### Reduce Memory Further
+### Change the Model
 
 ```yaml
-# In docker-compose.yml, adjust limits:
+# In docker-compose.yml, change the model:
 services:
-  ollama:
-    deploy:
-      resources:
-        limits:
-          memory: 3G  # Reduce if using tinyllama
+  llm:
+    provider:
+      type: model
+      options:
+        model: ai/gemma3:4B-Q4_K_M  # Change to your preferred model
 ```
 
 ## 📚 Features
@@ -114,11 +123,17 @@ Direct conversation with the LLM without documents.
 - Timing information for each step
 - View retrieved source chunks with page numbers
 
-### 4. **Vector Database Stats**
+### 4. **Docker Model Runner Integration**
+- Native Docker LLM inference (no Ollama needed)
+- OpenAI-compatible API
+- Models run directly on host via llama.cpp
+- Automatic model download on first use
+
+### 5. **Vector Database Stats**
 - Live chunk and document counts in sidebar
 - Document breakdown showing chunks per file
 
-### 5. **Persistent Storage**
+### 6. **Persistent Storage**
 - ChromaDB stores embeddings persistently
 - Chat history maintained in session
 
@@ -222,32 +237,34 @@ docker exec genai-app python /app/test_chroma.py
 
 ## 🔌 API Access
 
-Ollama API is exposed on port 11434:
+Docker Model Runner exposes an OpenAI-compatible API:
 
 ```bash
 # Chat with the model directly
-curl http://localhost:11434/api/generate -d '{
-  "model": "tinyllama:1.1b",
-  "prompt": "Explain Docker in 3 sentences",
-  "stream": false
-}'
+curl http://localhost:12434/engines/llama.cpp/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ai/llama3.2:1B-Q8_0",
+    "messages": [{"role": "user", "content": "Explain Docker in 3 sentences"}]
+  }'
 
 # List available models
-curl http://localhost:11434/api/tags
+docker model list
 ```
 
 ## 🐍 Python Integration
 
 ```python
-from langchain_ollama import OllamaLLM
+from langchain_openai import ChatOpenAI
 
-llm = OllamaLLM(
-    model="tinyllama:1.1b",
-    base_url="http://localhost:11434"
+llm = ChatOpenAI(
+    model="ai/llama3.2:1B-Q8_0",
+    base_url="http://model-runner.docker.internal/engines/llama.cpp/v1",
+    api_key="docker-model-runner"
 )
 
 response = llm.invoke("What is Kubernetes?")
-print(response)
+print(response.content)
 ```
 
 ## 🔄 Alternative: Use API Models (Zero RAM for LLM)

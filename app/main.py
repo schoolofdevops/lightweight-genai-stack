@@ -1,6 +1,6 @@
 """
 Lightweight GenAI Stack - RAG Application
-A memory-efficient GenAI stack using Ollama + ChromaDB + LangChain
+A memory-efficient GenAI stack using Docker Model Runner + ChromaDB + LangChain
 Designed to run within 6GB RAM - Educational version with RAG insights
 """
 
@@ -8,10 +8,10 @@ import os
 import time
 import tempfile
 import streamlit as st
-from langchain_ollama import OllamaLLM, OllamaEmbeddings
+from langchain_openai import ChatOpenAI
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains import ConversationalRetrievalChain
 from langchain_community.document_loaders import (
     PyPDFLoader,
     TextLoader,
@@ -20,11 +20,13 @@ from langchain_community.document_loaders import (
 from collections import Counter
 
 # Configuration from environment
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+# Docker Model Runner uses OpenAI-compatible API
+OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "http://model-runner.docker.internal/engines/llama.cpp/v1")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "docker-model-runner")
 CHROMA_HOST = os.getenv("CHROMA_HOST", "localhost")
 CHROMA_PORT = os.getenv("CHROMA_PORT", "8000")
-LLM_MODEL = os.getenv("LLM_MODEL", "tinyllama:1.1b")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+LLM_MODEL = os.getenv("LLM_MODEL", "ai/llama3.2:1B-Q8_0")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 
 # Page config
 st.set_page_config(
@@ -68,21 +70,22 @@ st.markdown("""
 
 @st.cache_resource
 def init_llm():
-    """Initialize the Ollama LLM"""
-    return OllamaLLM(
+    """Initialize the LLM using Docker Model Runner (OpenAI-compatible API)"""
+    return ChatOpenAI(
         model=LLM_MODEL,
-        base_url=OLLAMA_BASE_URL,
+        base_url=OPENAI_API_BASE,
+        api_key=OPENAI_API_KEY,
         temperature=0.7,
-        num_ctx=4096,
     )
 
 
 @st.cache_resource
 def init_embeddings():
-    """Initialize Ollama embeddings"""
-    return OllamaEmbeddings(
-        model=EMBEDDING_MODEL,
-        base_url=OLLAMA_BASE_URL,
+    """Initialize local embeddings using HuggingFace sentence-transformers"""
+    return HuggingFaceEmbeddings(
+        model_name=EMBEDDING_MODEL,
+        model_kwargs={'device': 'cpu'},
+        encode_kwargs={'normalize_embeddings': True}
     )
 
 
@@ -154,15 +157,14 @@ def process_uploaded_file(uploaded_file, progress_callback=None):
         os.unlink(tmp_path)
 
 
-def check_ollama_health():
-    """Check if Ollama is running and model is available"""
+def check_model_runner_health():
+    """Check if Docker Model Runner is running and model is available"""
     import requests
     try:
-        response = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5)
+        # Docker Model Runner exposes OpenAI-compatible /models endpoint
+        response = requests.get(f"{OPENAI_API_BASE}/models", timeout=10)
         if response.status_code == 200:
-            models = response.json().get('models', [])
-            model_names = [m['name'] for m in models]
-            return LLM_MODEL in model_names or any(LLM_MODEL in m for m in model_names)
+            return True
     except:
         pass
     return False
@@ -177,17 +179,21 @@ def display_rag_pipeline_info():
         ### The Pipeline:
         1. **Document Ingestion** → PDF/TXT/MD files are loaded
         2. **Chunking** → Documents split into 500-character chunks (with 50-char overlap)
-        3. **Embedding** → Each chunk converted to 768-dimensional vector using `nomic-embed-text`
+        3. **Embedding** → Each chunk converted to 384-dimensional vector using `all-MiniLM-L6-v2`
         4. **Storage** → Vectors stored in ChromaDB for fast similarity search
         5. **Query** → Your question is also converted to a vector
         6. **Retrieval** → Top 3 most similar chunks are found
         7. **Generation** → LLM generates answer using retrieved context
+
+        ### Docker Model Runner
+        This app uses **Docker Model Runner** - Docker's native LLM inference engine built on llama.cpp.
+        Models run directly on your host machine with an OpenAI-compatible API.
         """)
 
 
 def main():
     st.title("🤖 Lightweight GenAI Stack")
-    st.caption(f"Running on {LLM_MODEL} | Memory-efficient RAG with ChromaDB | **Learning Mode**")
+    st.caption(f"Running on Docker Model Runner ({LLM_MODEL}) | Memory-efficient RAG with ChromaDB | **Learning Mode**")
 
     # Get vectorstore stats
     stats = get_vectorstore_stats()
@@ -197,11 +203,11 @@ def main():
         st.header("📁 Document Upload")
 
         # Health check
-        if check_ollama_health():
-            st.success(f"✅ Ollama ({LLM_MODEL})")
+        if check_model_runner_health():
+            st.success(f"✅ Model Runner ({LLM_MODEL})")
         else:
-            st.error("❌ Ollama not ready")
-            st.info("Run `docker logs model-puller` to check")
+            st.error("❌ Model Runner not ready")
+            st.info("Ensure Docker Desktop 4.40+ with Model Runner enabled")
 
         # Vector DB Status
         st.subheader("📊 Vector Database")
@@ -311,9 +317,9 @@ def main():
                         rag_details["steps"].append({
                             "name": "Query Embedding",
                             "time": f"{embed_time:.2f}s",
-                            "details": f"768-dim vector using {EMBEDDING_MODEL}"
+                            "details": f"384-dim vector using {EMBEDDING_MODEL}"
                         })
-                        st.write(f"   ✅ Generated 768-dim vector ({embed_time:.2f}s)")
+                        st.write(f"   ✅ Generated 384-dim vector ({embed_time:.2f}s)")
 
                         # Step 2: Similarity search
                         st.write("**Step 2:** Searching for similar chunks...")
@@ -358,6 +364,7 @@ Question: {prompt}
 Answer:"""
 
                         response = llm.invoke(augmented_prompt)
+                        response_text = response.content if hasattr(response, 'content') else str(response)
                         gen_time = time.time() - start_time
                         rag_details["steps"].append({
                             "name": "LLM Generation",
@@ -379,13 +386,14 @@ Answer:"""
                         st.write(f"Using {LLM_MODEL} directly (no document context)")
                         start_time = time.time()
                         response = llm.invoke(prompt)
+                        response_text = response.content if hasattr(response, 'content') else str(response)
                         gen_time = time.time() - start_time
                         rag_details["total_time"] = f"{gen_time:.2f}s"
                         status.update(label=f"✅ Complete ({gen_time:.2f}s)", state="complete")
 
                 # Display response
                 st.markdown("---")
-                st.markdown(response)
+                st.markdown(response_text)
 
                 # Show sources expander
                 if use_retrieval and rag_details.get("sources"):
@@ -398,7 +406,7 @@ Answer:"""
                 # Store message with RAG details
                 st.session_state.messages.append({
                     "role": "assistant",
-                    "content": response,
+                    "content": response_text,
                     "rag_details": rag_details
                 })
 

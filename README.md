@@ -33,7 +33,8 @@ Total                  | ~4-6GB
 
 ```bash
 # Create directory
-mkdir lightweight-genai-stack && cd lightweight-genai-stack
+git clone https://github.com/schoolofdevops/lightweight-genai-stack.git
+cd lightweight-genai-stack
 
 # Copy the files from this project
 ```

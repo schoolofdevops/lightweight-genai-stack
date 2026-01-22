@@ -564,7 +564,7 @@ if __name__ == "__main__":
 
 ```bash
 # Start all services in detached mode
-docker compose up --build -d genai-app
+docker compose up --build -d 
 
 # Watch the build and startup logs
 docker compose logs -f

@@ -42,7 +42,7 @@ mkdir lightweight-genai-stack && cd lightweight-genai-stack
 
 ```bash
 # Start all services
-docker compose up -d
+docker compose up --build -d
 
 # Watch the logs (model download takes a few minutes)
 docker compose logs -f model-puller
